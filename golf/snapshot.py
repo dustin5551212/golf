@@ -25,6 +25,7 @@ def snapshot(state: State) -> dict:
         "ending": state.ending,
         "turnsLeft": state.turns_left,
         "over": state.over,
+        "endedBy": state.ended_by,
         "seats": [{"name": s["name"], "total": s["total"]} for s in state.seats],
         "holeScores": list(state.hole_scores),
         "hands": [[{"rank": c["rank"], "suit": c["suit"], "up": c["up"]} for c in hand] for hand in state.hands],

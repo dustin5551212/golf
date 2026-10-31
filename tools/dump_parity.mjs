@@ -36,6 +36,7 @@ const snap = (s) => ({
   ending: s.ending,
   turnsLeft: s.turnsLeft,
   over: s.over,
+  endedBy: s.endedBy ?? null,
   seats: s.seats.map((x) => ({ name: x.name, total: x.total })),
   holeScores: s.holeScores,
   hands: s.hands.map((h) => h.map((c) => ({ rank: c.rank, suit: c.suit, up: c.up }))),

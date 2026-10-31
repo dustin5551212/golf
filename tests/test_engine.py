@@ -331,6 +331,7 @@ def test_once_every_grid_shows_three_cards_anyone_may_knock_and_the_hole_ends():
 
     assert state.phase == "done"
     assert state.pending is None
+    assert state.ended_by == "knock", "the hole remembers that a knock ended it"
     assert all(c["up"] for hand in state.hands for c in hand), "every card turns face up"
     assert all(isinstance(s, int) for s in state.hole_scores), "the hole is scored"
     assert state.seats[knocker]["total"] == before[knocker] + state.hole_scores[knocker]
@@ -365,3 +366,17 @@ def test_the_hole_after_a_knock_is_over_next_hole_and_no_second_knock():
     assert state.hole == hole + 1
     assert state.phase == "draw"
     assert knock_ready(state) is False, "a fresh hole is not knockable"
+
+def test_a_hole_that_fills_up_on_its_own_is_marked_as_a_grid_finish():
+    state = create_match(seats=2, seed=31)
+    guard = 0
+    while state.phase != "done" and guard < 20000:
+        guard += 1
+        apply(state, state.turn, choose_action(state, state.turn))
+
+    assert state.phase == "done"
+    assert state.ended_by == "grid"
+
+    if not state.over:
+        apply(state, 0, {"type": "next-hole"})
+        assert state.ended_by is None

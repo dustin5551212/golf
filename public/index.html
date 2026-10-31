@@ -625,8 +625,43 @@ function renderBoard(message) {
 
   if (!S.stolen) setConn(S.online ? "live" : "…", S.online ? "ok" : "");
 
-  if (view.phase === "done") showOverlay(view);
-  else hideOverlay();
+  if (view.phase === "done") {
+    // A knock ends the hole with every card turning up. Hold the table for four seconds
+    // so the table can be read, then show the totals — once per hole, or every incoming
+    // view would hide them again and start another countdown.
+    if (view.endedBy !== "knock") showOverlay(view);
+    else if (knockShownFor === view.hole) showOverlay(view);
+    else holdForKnock();
+  } else {
+    clearKnockHold();
+    hideOverlay();
+    knockShownFor = null;
+  }
+}
+
+/** How long the finished table stays visible after a knock, before the totals. */
+const KNOCK_REVEAL_MS = 4000;
+let knockHold = null;
+/** The hole whose totals have already been revealed after a knock. */
+let knockShownFor = null;
+
+function holdForKnock() {
+  if (knockHold) return;           // already holding: let this timer run out
+  hideOverlay();
+  $("status").innerHTML = "<b>Knocked</b> \u2014 every card is up. Totals in a moment\u2026";
+  knockHold = setTimeout(() => {
+    knockHold = null;
+    if (S.view && S.view.phase === "done") {
+      knockShownFor = S.view.hole;
+      showOverlay(S.view);
+    }
+  }, KNOCK_REVEAL_MS);
+}
+
+function clearKnockHold() {
+  if (!knockHold) return;
+  clearTimeout(knockHold);
+  knockHold = null;
 }
 
 function valueOf(rank) {

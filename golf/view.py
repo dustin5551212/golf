@@ -68,6 +68,8 @@ def view(state: State, seat: int, extra: dict | None = None) -> dict:
         "ending": state.ending,
         "turnsLeft": state.turns_left,
         "over": state.over,
+        # "knock" or "grid": the client holds the table open before showing totals.
+        "endedBy": state.ended_by,
         # Counts and public piles only — never the stock's contents.
         # The stock is a count. The discard pile is face up on the table, so its
         # contents are public — players remember them anyway, and pretending

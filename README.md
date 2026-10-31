@@ -101,7 +101,10 @@ Layer by layer:
   just the player to move, and `apply` honours it out of turn — the one action that
   deliberately bypasses the turn check. It is refused mid-swap ("finish the turn in
   progress") so a held card can never be lost, and it ends the hole by flipping every
-  card up and scoring (`_score_hole`), with no penalty.
+  card up and scoring (`_score_hole`), with no penalty. The engine records why a hole
+  ended (`ended_by` → `endedBy` on the wire): `"knock"` or `"grid"`. The client uses it to
+  hold a knocked hole on screen for four seconds (`KNOCK_REVEAL_MS`) before the totals,
+  while a hole that filled up still goes straight to the scorecard.
 - **The stock's contents never leave the server.** `golf/view.py` is the only place
   that decides what a seat is sent; build views from scratch there rather than
   deleting fields off an engine state.

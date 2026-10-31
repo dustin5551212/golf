@@ -127,6 +127,8 @@ class State:
     hole_scores: list = field(default_factory=list)
     log: list[dict] = field(default_factory=list)
     over: bool = False
+    #: Why the last hole ended: "knock", "grid", or None while it is still live.
+    ended_by: str | None = None
     # A function does not survive JSON, so it is not part of the surface state.
     rng: Callable[[], float] | None = None
 
@@ -164,6 +166,7 @@ def _start_hole(state: State) -> None:
     state.source = None
     state.ending = False
     state.turns_left = 0
+    state.ended_by = None
     state.hole_scores = [None for _ in state.seats]
 
 
@@ -288,6 +291,7 @@ def _end_turn(state: State) -> None:
     elif state.ending:
         state.turns_left -= 1
     if state.ending and state.turns_left <= 0:
+        state.ended_by = "grid"
         _score_hole(state)
         return
     state.turn = (state.turn + 1) % len(state.seats)
@@ -309,6 +313,7 @@ def knock_ready(state: State) -> bool:
 def _knock(state: State, seat: int) -> None:
     """A knock ends the hole on the spot: every grid turns up and the hole scores."""
     _push_log(state, f"{state.seats[seat]['name']} knocked", True)
+    state.ended_by = "knock"
     _score_hole(state)
 
 
