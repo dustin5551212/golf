@@ -28,6 +28,13 @@ golf --seed 42 --seats 3      # headless match
 golf-serve 5175               # server on another port
 ```
 
+**Watch the sibling directory.** `../golf` is the JavaScript implementation, and running
+`python -m golf` from `~/Projects/card-games` makes Python resolve *that* folder as a
+namespace package — you get `No module named golf.__main__; 'golf' is a package and
+cannot be directly executed`. It is not a broken install: use `golf`, or run from this
+directory. The wrappers are immune because a regular package with `__init__.py` wins over
+a namespace portion further down the path.
+
 No runtime dependencies: standard library only (`http.server`, `threading`, `json`).
 Development needs `pytest`, in `.venv`:
 
