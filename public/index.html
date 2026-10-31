@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Golf — six-card, nine holes</title>
+<link rel="stylesheet" href="/styles.css">
+<style>
+  /* The bare minimum, inline: if styles.css is unreachable — the page opened off the
+     disk, a proxy ate a request — the three screens must still not all show at once. */
+  body{margin:0;background:#071019;color:#f3ddaa;font-family:system-ui,sans-serif}
+  .screen{display:none}
+  .screen.on{display:block}
+  #app{max-width:640px;margin:24px auto;padding:0 16px}
+</style>
+</head>
+<body>
+<div id="app" class="lobby">
+  <div class="grain"></div>
+
+  <div class="content">
+
+    <!-- ── 1. open or join a table ─────────────────────────────────── -->
+    <div id="paneLobby" class="screen on">
+      <header>
+        <div class="brand">Golf<em>.</em></div>
+        <div class="sub">six-card · nine holes</div>
+      </header>
+
+      <p class="lobby-lede">Two to four at a table, each on their own device.</p>
+
+      <div class="tabs">
+        <button id="tabCreate" class="on">New table</button>
+        <button id="tabJoin">Join with a code</button>
+      </div>
+
+      <div id="createPane">
+        <label class="field"><span>Your name</span>
+          <input id="nameCreate" type="text" maxlength="20" placeholder="Dustin" autocomplete="given-name">
+        </label>
+        <label class="field"><span>Seats at the table</span>
+          <select id="seatPick">
+            <option value="2">Two players</option>
+            <option value="3" selected>Three players</option>
+            <option value="4">Four players</option>
+          </select>
+        </label>
+        <p class="hintline">The first hole is dealt once every seat is filled, so a table can sit open
+          while you send the link round.</p>
+        <button class="solid" id="createBtn">Open a table</button>
+      </div>
+
+      <div id="resumePane" style="display:none">
+        <p class="hintline" id="resumeText" style="font-size:12px;margin:0 0 12px"></p>
+        <div class="row tight">
+          <button class="solid" id="resumeBtn">Rejoin that seat</button>
+          <button id="resumeOther">Join as someone else</button>
+        </div>
+      </div>
+
+      <div id="joinPane" style="display:none">
+        <label class="field"><span>Room code</span>
+          <input id="codeIn" type="text" maxlength="6" placeholder="ABC234" autocapitalize="characters"
+                 autocomplete="off" spellcheck="false">
+        </label>
+        <label class="field"><span>Your name</span>
+          <input id="nameJoin" type="text" maxlength="20" placeholder="Dustin" autocomplete="given-name">
+        </label>
+        <button class="solid" id="joinBtn">Take a seat</button>
+      </div>
+
+      <div class="err" id="lobbyErr"></div>
+      <div id="conn"></div>
+    </div>
+
+    <!-- ── 2. the waiting room ─────────────────────────────────────── -->
+    <div id="paneWait" class="screen">
+      <header>
+        <div class="brand">Golf<em>.</em></div>
+        <div class="sub">waiting for the table</div>
+        <div class="plate">Room <b id="waitCode">–</b></div>
+      </header>
+
+      <div class="seatlist" id="waitSeats"></div>
+
+      <div class="invite">
+        <div class="lab">Send this to the others</div>
+        <div class="url" id="inviteUrl">…</div>
+        <button id="copyBtn">Copy link</button>
+      </div>
+
+      <p class="hintline" style="margin-top:14px">The deal waits for every seat. Once everyone is in,
+        anyone can press <b>Deal</b>.</p>
+      <button class="solid" id="dealBtn" disabled>Deal the first hole</button>
+      <div class="err" id="waitErr"></div>
+      <div id="connWait"></div>
+    </div>
+
+    <!-- ── 3. the table ───────────────────────────────────────────── -->
+    <div id="paneBoard" class="screen">
+      <header>
+        <div class="brand">Golf<em>.</em></div>
+        <div class="sub">six-card · nine holes</div>
+        <div class="plate">Hole <b id="holeNum">1</b> / 9</div>
+      </header>
+
+      <div id="opponents" class="opponents"></div>
+
+      <div class="centre">
+        <div class="pile">
+          <div class="plabel">Stock</div>
+          <div id="stockSlot"></div>
+        </div>
+        <div class="pile">
+          <div class="plabel">Discard</div>
+          <div id="discardSlot"></div>
+        </div>
+        <div class="pile">
+          <div class="plabel">Drawn</div>
+          <div id="drawnSlot"></div>
+        </div>
+        <div class="logwrap"><div id="log" class="log"></div></div>
+      </div>
+
+      <div class="board">
+        <div class="mecol">
+          <div class="plabel">Your grid <span id="myhint" class="hint"></span></div>
+          <div id="mygrid" class="grid"></div>
+        </div>
+        <div class="panel">
+          <h3>Scorecard <span id="scHole"></span></h3>
+          <table id="scorecard"></table>
+        </div>
+      </div>
+
+      <div class="bar">
+        <div id="status" class="status"></div>
+        <div id="actions"></div>
+      </div>
+
+      <div class="foot">Pairs in a column score 0 · A 1 · 2 −2 · 3–10 face · J/Q 10 · K 0</div>
+      <div id="connBoard"></div>
+    </div>
+
+  </div>
+
+  <div id="overlay"></div>
+</div>
+
+<script type="module">
+/* ── opened without a server ────────────────────────────────────────── */
+
+// A `file://` page cannot fetch, and its absolute /styles.css does not exist, so the
+// page renders as three unstyled screens and a NetworkError in the console. Say what
+// is actually wrong instead of leaving someone to guess.
+if (location.protocol === "file:") {
+  document.getElementById("app").className = "lobby";
+  for (const pane of ["paneWait", "paneBoard"]) document.getElementById(pane).remove();
+  const pane = document.getElementById("paneLobby");
+  pane.innerHTML =
+    '<header><div class="brand">Golf<em>.</em></div><div class="sub">six-card · nine holes</div></header>' +
+    '<p class="lobby-lede">This page is meant to be <em>served</em>, not opened from the disk.</p>' +
+    '<p class="hintline">Browsers will not let a <b>file://</b> page load its stylesheet or talk to a server, ' +
+    'so this is as far as it gets. From the project directory:</p>' +
+    '<div class="invite"><div class="url">scripts/up.sh</div></div>' +
+    '<p class="hintline" style="margin-top:14px">then open <b>http://localhost:5174/</b> — or the public link ' +
+    'printed by that command. To play with someone else, send them that link.</p>';
+  throw new Error("file:// origin — nothing to run");
+}
+
+/* ── tiny helpers ──────────────────────────────────────────────────── */
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) =>
+  String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const isRed = (suit) => suit === "\u2665" || suit === "\u2666";
+const label = (c) => (c ? c.rank + c.suit : "");
+
+const NAME_KEY = "golf.name";
+const tokenKey = (code) => `golf.token.${code}`;
+
+const store = {
+  get name() {
+    try { return localStorage.getItem(NAME_KEY) || ""; } catch { return ""; }
+  },
+  set name(v) {
+    try { localStorage.setItem(NAME_KEY, v); } catch { /* private mode */ }
+  },
+  /**
+   * A seat is per tab first and per device second. sessionStorage is what makes two
+   * tabs in one browser behave like two people; localStorage is the convenience that
+   * survives closing the tab, and is only used when this tab has never held a seat.
+   */
+  token(code) {
+    try {
+      return sessionStorage.getItem(tokenKey(code)) || localStorage.getItem(tokenKey(code)) || null;
+    } catch {
+      return null;
+    }
+  },
+  setToken(code, token) {
+    try {
+      sessionStorage.setItem(tokenKey(code), token);
+      localStorage.setItem(tokenKey(code), token);
+    } catch {
+      /* private mode */
+    }
+  },
+  forgetToken(code) {
+    try {
+      sessionStorage.removeItem(tokenKey(code));
+      localStorage.removeItem(tokenKey(code));
+    } catch {
+      /* private mode */
+    }
+  },
+};
+
+/* ── state ─────────────────────────────────────────────────────────── */
+
+const S = {
+  code: null,
+  token: null,
+  seat: null,
+  view: null,
+  started: false,
+  presence: [],
+  seats: [],
+  waitMsg: null,
+  es: null,
+  pollTimer: null,
+  retries: 0,
+  online: false,
+};
+
+/* ── screens ───────────────────────────────────────────────────────── */
+
+function screen(name) {
+  for (const pane of ["paneLobby", "paneWait", "paneBoard"]) {
+    $(pane).classList.toggle("on", pane === name);
+  }
+  $("app").className = name === "paneBoard" ? "board" : "lobby";
+  if (name !== "paneBoard") hideOverlay();
+}
+
+const CONN = {
+  board: "connBoard",
+  wait: "connWait",
+  lobby: "conn",
+};
+function setConn(text, cls) {
+  for (const id of Object.values(CONN)) {
+    const el = $(id);
+    if (!el) continue;
+    el.textContent = text;
+    el.className = cls || "";
+  }
+}
+
+/* ── api ───────────────────────────────────────────────────────────── */
+
+async function api(path, { method = "GET", body } = {}) {
+  const res = await fetch(path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let data = {};
+  try {
+    data = await res.json();
+  } catch {
+    /* an empty 204 is fine */
+  }
+  if (!res.ok) throw new Error(data.error || `request failed (${res.status})`);
+  return data;
+}
+
+/* ── opening and joining ───────────────────────────────────────────── */
+
+async function createTable() {
+  const name = $("nameCreate").value.trim();
+  const seats = Number($("seatPick").value);
+  if (name.length < 2) return fail("lobbyErr", "Give yourself a name first.");
+  store.name = name;
+  try {
+    const room = await api(`/api/room?name=${encodeURIComponent(name)}&seats=${seats}`, { method: "POST" });
+    S.code = room.code;
+    S.token = room.token;
+    S.seat = room.seat;
+    store.setToken(room.code, room.token);
+    attach(room.code);
+  } catch (error) {
+    fail("lobbyErr", networkish(error) ? cannotReach() : error.message);
+  }
+}
+
+const networkish = (error) => error instanceof TypeError || /network|fetch/i.test(error.message || "");
+
+/** Server refusals, in the words of somebody standing at a door. */
+function friendly(message) {
+  if (/no such room/i.test(message)) return "That table is closed — a room code only lives as long as the server does. Ask for a fresh link.";
+  if (/already started/i.test(message)) return "That game has started. Only a seat you already hold can rejoin it.";
+  if (/table is full/i.test(message)) return "That table is full. Ask for a link with a free seat.";
+  return message;
+}
+const cannotReach = () => `cannot reach the server at ${location.origin} — is it still running?`;
+
+async function joinTable() {
+  const name = $("nameJoin").value.trim();
+  const code = $("codeIn").value.trim().toUpperCase();
+  if (name.length < 2) return fail("lobbyErr", "Give yourself a name first.");
+  if (code.length < 4) return fail("lobbyErr", "That room code looks short.");
+  store.name = name;
+  try {
+    const room = await api(
+      `/api/join?room=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}&token=${encodeURIComponent(store.token(code) || "")}`,
+      { method: "POST" },
+    );
+    S.code = room.code;
+    S.token = room.token;
+    S.seat = room.seat;
+    store.setToken(room.code, room.token);
+    attach(room.code);
+  } catch (error) {
+    fail("lobbyErr", networkish(error) ? cannotReach() : friendly(error.message));
+  }
+}
+
+function fail(id, message) {
+  $(id).textContent = message;
+}
+
+function attach(code) {
+  setConn("connecting…", "");
+  startHeartbeat();
+  if (S.es) S.es.close();
+  const url = `/api/stream?room=${encodeURIComponent(code)}&token=${encodeURIComponent(S.token)}`;
+  const es = new EventSource(url);
+  S.es = es;
+  es.onopen = () => {
+    S.retries = 0;
+    hydrate();
+  };
+  es.onmessage = (event) => {
+    let message;
+    try {
+      message = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    handle(message);
+  };
+  es.onerror = () => {
+    if (S.stolen) return;
+    S.retries += 1;
+    if (S.retries > 1) setConn("stream idle — still polling", "");
+    // Nothing depends on the stream: the heartbeat below keeps the table live even
+    // when a tunnel opens the stream and then never delivers a byte through it.
+  };
+}
+
+/**
+ * Ask once for the current state. The pushed messages are the truth; this is only so
+ * that opening the page after a tunnel has buffered the stream is not a blank table.
+ */
+async function hydrate() {
+  if (!S.code || !S.token) return;
+  try {
+    const message = await api(
+      `/api/state?room=${encodeURIComponent(S.code)}&token=${encodeURIComponent(S.token)}`,
+    );
+    if (message && (message.type === "view" || message.type === "lobby")) handle(message);
+  } catch {
+    /* the stream will catch up */
+  }
+}
+
+function handle(message) {
+  if (message.type === "seat-taken") {
+    S.stolen = true;
+    if (S.es) S.es.close();
+    stopHeartbeat();
+    setConn("this seat was opened in another window — play there", "bad");
+    const bar = $("status");
+    if (bar) bar.innerHTML = "This seat was opened in another window, so this one has stopped.";
+    return;
+  }
+  if (S.stolen) return;
+  if (message.type === "lobby") {
+    S.started = false;
+    renderWait(message);
+    return;
+  }
+  if (message.type === "view") {
+    S.started = true;
+    renderBoard(message);
+    return;
+  }
+}
+
+async function act(action, where = "status") {
+  if (!S.started) return;
+  try {
+    await api(`/api/action?room=${encodeURIComponent(S.code)}&token=${encodeURIComponent(S.token)}`, {
+      method: "POST",
+      body: action,
+    });
+  } catch (error) {
+    // A refusal means the table moved on without you (or it is not your turn).
+    // Say so plainly instead of pretending the click worked.
+    const el = $(where);
+    if (el) {
+      el.textContent = error.message;
+      setTimeout(() => {
+        if (S.view) renderBoard({ ...S.view, code: S.code });
+      }, 1200);
+    }
+  }
+}
+
+async function deal() {
+  try {
+    await api(`/api/deal?room=${encodeURIComponent(S.code)}&token=${encodeURIComponent(S.token)}`, { method: "POST" });
+  } catch (error) {
+    fail("waitErr", error.message);
+  }
+}
+
+/* ── the heartbeat ──────────────────────────────────────────────────── */
+
+/**
+ * One small GET every 1.5s, forever. This is the transport that actually works through
+ * the tunnel: cloudflared accepts a streamed response and then delivers nothing down it,
+ * so an app that trusts its EventSource shows a table that never moves. The stream is
+ * still opened — on a LAN or a direct host it is faster — but nothing is allowed to depend
+ * on it.
+ */
+function startHeartbeat() {
+  if (S.pollTimer) clearInterval(S.pollTimer);
+  S.pollTimer = setInterval(async () => {
+    if (S.stolen || !S.code || !S.token) return;
+    try {
+      const message = await api(
+        `/api/state?room=${encodeURIComponent(S.code)}&token=${encodeURIComponent(S.token)}`,
+      );
+      S.fails = 0;
+      if (message && (message.type === "view" || message.type === "lobby")) handle(message);
+      S.online = true;
+      setConn("live", "ok");
+    } catch {
+      S.fails = (S.fails || 0) + 1;
+      if (S.fails >= 2) {
+        S.online = false;
+        setConn("reconnecting…", "bad");
+      }
+    }
+  }, 1500);
+  hydrate();
+}
+
+function stopHeartbeat() {
+  if (S.pollTimer) clearInterval(S.pollTimer);
+  S.pollTimer = null;
+}
+
+/* ── the waiting room ───────────────────────────────────────────────── */
+
+function inviteUrl(code) {
+  const base = location.origin !== "null" ? location.origin : location.href.replace(/\/[^/]*$/, "");
+  return `${base}/?room=${code}`;
+}
+
+function renderWait(message) {
+  S.code = message.code || S.code;
+  S.seat = message.you ?? S.seat;
+  S.seats = message.presence || [];
+  const joined = S.seats.filter((s) => s.joined).length;
+  const size = message.seatCount || S.seats.length;
+
+  $("waitCode").textContent = S.code;
+  $("inviteUrl").textContent = inviteUrl(S.code);
+  $("waitSeats").innerHTML = S.seats
+    .map((s, i) => {
+      const mine = i === S.seat;
+      const cls = !s.joined ? "empty" : s.live || mine ? "here" : "gone";
+      const status = !s.joined ? "open seat" : s.live ? "here" : mine ? "you" : "away";
+      return `<div class="s ${cls} ${mine ? "you" : ""}">
+        <span class="n">${i + 1}</span>
+        <span>${s.joined ? esc(s.name || `Player ${i + 1}`) : "—"}</span>
+        <span class="st">${status}</span>
+      </div>`;
+    })
+    .join("");
+
+  const ready = joined === size;
+  $("dealBtn").disabled = !ready;
+  $("dealBtn").textContent = ready ? "Deal the first hole" : `Waiting for ${size - joined} more`;
+  screen("paneWait");
+  setConn("live", "ok");
+}
+
+/* ── the board ─────────────────────────────────────────────────────── */
+
+function cardHTML(card, cls, attrs) {
+  if (!card || !card.up) return `<div class="card back ${cls || ""}" ${attrs || ""}></div>`;
+  const red = isRed(card.suit) ? " red" : "";
+  const index = `<span class="idx"><i>${esc(card.rank)}</i><em>${esc(card.suit)}</em></span>`;
+  return `<div class="card${red} ${cls || ""}" ${attrs || ""}>${index}` +
+    `<span class="pip">${esc(card.suit)}</span>` +
+    `<span class="idx idx--b"><i>${esc(card.rank)}</i><em>${esc(card.suit)}</em></span></div>`;
+}
+
+function canDo(view, type) {
+  return (view.legal || []).some((a) => a.type === type);
+}
+
+function renderBoard(message) {
+  const view = message.view || S.view;
+  if (!view) return;
+  S.view = view;
+  const you = view.you;
+  const myTurn = view.turn === you && view.phase !== "done";
+
+  screen("paneBoard");
+  $("holeNum").textContent = view.hole;
+  $("scHole").textContent = `hole ${view.hole} of ${view.holes}`;
+
+  /* scorecard — everyone at the table, you in white */
+  $("scorecard").innerHTML =
+    '<colgroup><col class="c1"><col class="c2"><col class="c3"></colgroup>' +
+    '<tr><th>Player</th><th class="num">Hole</th><th class="num">Total</th></tr>' +
+    view.seats
+      .map((s) => {
+        const score = s.holeScore === null || s.holeScore === undefined ? "\u2013" : s.holeScore;
+        return `<tr${s.seat === you ? ' class="row-me"' : ""}>` +
+          `<td class="name">${esc(s.name)}</td><td class="num">${score}</td>` +
+          `<td class="num">${s.total}</td></tr>`;
+      })
+      .join("");
+
+  /* the other seats, face up where they are face up */
+  const presence = message.presence || [];
+  $("opponents").innerHTML = view.others
+    .map((other) => {
+      const info = view.seats[other.seat];
+      const turn = view.turn === other.seat && view.phase !== "done";
+      const live = presence[other.seat]?.live;
+      const cards = other.cards.map((c) => cardHTML(c, "sm")).join("");
+      return `<div class="seat${turn ? " turn" : ""}">` +
+        `<div class="plate"><span class="dot${live ? "" : " away"}"></span>` +
+        `<span class="who${live ? "" : " away"}">${esc(info.name)}</span>` +
+        `<span class="th${live ? "" : " away"}">${turn ? (live ? "playing" : "away") : info.total}</span></div>` +
+        `<div class="grid small opp-grid">${cards}</div></div>`;
+    })
+    .join("");
+
+  /* stock, discard, the card in hand */
+  const canStock = myTurn && view.phase === "draw";
+  $("stockSlot").innerHTML = view.stock
+    ? `<div class="pile">${cardHTML(null, "big" + (canStock ? " sel" : ""), canStock ? 'data-draw="stock"' : "")}` +
+      `<span class="count">${view.stock}</span></div>`
+    : '<div class="slot">\u2013</div>';
+
+  $("discardSlot").innerHTML = view.discardTop
+    ? cardHTML(view.discardTop, "big" + (canStock ? " sel" : ""), canStock ? 'data-draw="discard"' : "")
+    : '<div class="slot">\u2013</div>';
+
+  $("drawnSlot").innerHTML = view.pending
+    ? cardHTML({ up: true, ...view.pending }, "big glow")
+    : '<div class="slot">\u2013</div>';
+
+  /* your own six, with a per-column readout under each column */
+  const canSwap = myTurn && view.phase === "swap";
+  const cells = view.hand.cards.map((card, i) => {
+    const live = canSwap;
+    const attr = live ? `data-slot="${i}" data-act="swap"` : "";
+    return cardHTML(card, "big" + (live ? " sel" : ""), attr);
+  });
+  for (const [a, b] of [[0, 3], [1, 4], [2, 5]]) {
+    const one = view.hand.cards[a];
+    const two = view.hand.cards[b];
+    if (one.up && two.up) {
+      const pair = one.rank === two.rank;
+      const value = pair ? 0 : valueOf(one.rank) + valueOf(two.rank);
+      cells.push(`<div class="colchip${pair ? " zero" : ""}">${pair ? "0 pair" : value}</div>`);
+    } else {
+      cells.push('<div class="colchip">?</div>');
+    }
+  }
+  $("mygrid").innerHTML = cells.join("");
+
+  $("log").innerHTML = view.log
+    .map((entry) => `<div${entry.hl ? ' class="hl"' : ""}>${esc(entry.text)}</div>`)
+    .join("");
+
+  /* what is going on, and what you may do about it */
+  const turnName = view.seats[view.turn]?.name || "someone";
+  const turnLive = presence[view.turn]?.live;
+  let status = "";
+  if (view.phase === "done") status = "";
+  else if (!myTurn) {
+    status = turnLive === false
+      ? `Waiting for <b>${esc(turnName)}</b> — their seat is away.`
+      : `<b>${esc(turnName)}</b> is playing…`;
+  } else if (view.phase === "draw") {
+    status = "Draw from the <b>stock</b> or take the <b>discard</b>.";
+  } else if (view.phase === "swap") {
+    status = view.source === "discard"
+      ? `You took <b>${esc(label(view.pending))}</b> — it must go into your grid.`
+      : `Put <b>${esc(label(view.pending))}</b> in your grid, or throw it away and pass.`;
+  }
+  $("status").innerHTML = status;
+
+  $("actions").innerHTML = canDo(view, "discard")
+    ? '<button data-act="discard">Throw it away (pass)</button>'
+    : "";
+
+  $("myhint").textContent = myTurn && view.phase === "swap" ? "click a card to swap" : "";
+
+  if (!S.stolen) setConn(S.online ? "live" : "…", S.online ? "ok" : "");
+
+  if (view.phase === "done") showOverlay(view);
+  else hideOverlay();
+}
+
+function valueOf(rank) {
+  if (rank === "A") return 1;
+  if (rank === "2") return -2;
+  if (rank === "K") return 0;
+  if (rank === "J" || rank === "Q") return 10;
+  return Number(rank);
+}
+
+function showOverlay(view) {
+  const me = view.seats[view.you];
+  const low = Math.min(...view.seats.map((s) => s.holeScore ?? Infinity));
+  const rows = view.seats
+    .map((s) => `<tr${s.seat === view.you ? ' class="row-me"' : ""}>` +
+      `<td>${esc(s.name)}</td><td class="num">${s.holeScore}</td>` +
+      `<td class="num"><b>${s.total}</b></td></tr>`)
+    .join("");
+
+  let title;
+  let note;
+  let button;
+  if (view.over) {
+    const best = Math.min(...view.seats.map((s) => s.total));
+    const winners = view.seats.filter((s) => s.total === best).map((s) => s.name);
+    title = me.total === best ? "You win" : `${winners.join(" & ")} wins`;
+    note = `final after ${view.holes} holes — lowest total wins`;
+    button = "";
+  } else {
+    const winners = view.seats.filter((s) => s.holeScore === low).map((s) => s.name);
+    title = `${winners.join(" & ")} ${winners.length > 1 ? "take" : "takes"} hole ${view.hole}`;
+    note = `hole ${view.hole + 1} of ${view.holes} next — lowest total wins`;
+    button = '<button data-act="next-hole" class="solid">Next hole &rarr;</button>';
+  }
+
+  const overlay = $("overlay");
+  overlay.innerHTML =
+    `<h2>${esc(title)}</h2><div class="note">${esc(note)}</div>` +
+    `<table><tr><th>Player</th><th class="num">Hole</th><th class="num">Total</th></tr>${rows}</table>` +
+    button;
+  overlay.className = "show";
+}
+
+function hideOverlay() {
+  const overlay = $("overlay");
+  overlay.className = "";
+  overlay.innerHTML = "";
+}
+
+/* ── clicks ─────────────────────────────────────────────────────────── */
+
+document.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-act],[data-draw]");
+  if (!target) return;
+
+  const draw = target.dataset.draw;
+  if (draw === "stock") return void act({ type: "draw-stock" });
+  if (draw === "discard") return void act({ type: "draw-discard" });
+
+  const act_ = target.dataset.act;
+  if (act_ === "swap") return void act({ type: "swap", slot: Number(target.dataset.slot) });
+  if (act_ === "flip") return void act({ type: "flip", slot: Number(target.dataset.slot) });
+  if (act_ === "discard") return void act({ type: "discard" });
+  if (act_ === "next-hole") return void act({ type: "next-hole" }, "status");
+});
+
+$("tabCreate").addEventListener("click", () => {
+  $("tabCreate").classList.add("on");
+  $("tabJoin").classList.remove("on");
+  $("createPane").style.display = "";
+  $("joinPane").style.display = "none";
+  fail("lobbyErr", "");
+});
+
+$("tabJoin").addEventListener("click", () => {
+  $("tabJoin").classList.add("on");
+  $("tabCreate").classList.remove("on");
+  $("joinPane").style.display = "";
+  $("createPane").style.display = "none";
+  $("codeIn").focus();
+  fail("lobbyErr", "");
+});
+
+$("createBtn").addEventListener("click", createTable);
+$("joinBtn").addEventListener("click", joinTable);
+$("dealBtn").addEventListener("click", deal);
+
+/**
+ * Copy, on http or https. `navigator.clipboard` only exists in a secure context, and the
+ * playit tunnel is plain http on a port — so the modern API is unavailable exactly where
+ * the invite link matters most. The old selection trick still works there.
+ */
+async function copyText(text) {
+  try {
+    if (window.isSecureContext && navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fall through to the selection trick */
+  }
+  try {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.top = "-1000px";
+    document.body.appendChild(area);
+    area.select();
+    const copied = document.execCommand("copy");
+    area.remove();
+    return copied;
+  } catch {
+    return false;
+  }
+}
+
+$("copyBtn").addEventListener("click", async () => {
+  const url = inviteUrl(S.code);
+  const copied = await copyText(url);
+  $("copyBtn").textContent = copied ? "Copied" : "Select the link above";
+  setTimeout(() => ($("copyBtn").textContent = "Copy link"), 1800);
+});
+
+for (const id of ["nameCreate", "nameJoin"]) {
+  if (store.name) $(id).value = store.name;
+}
+for (const [id, fn] of [
+  ["nameCreate", createTable],
+  ["nameJoin", joinTable],
+  ["codeIn", joinTable],
+]) {
+  $(id).addEventListener("keydown", (e) => {
+    if (e.key === "Enter") fn();
+  });
+}
+
+/* ── boot: an invite link, or a seat we already hold ─────────────────── */
+
+const params = new URLSearchParams(location.search);
+const inviteCode = (params.get("room") || "").toUpperCase();
+
+// A link may carry the seat token as well as the room: that is how you get back to
+// your own chair from another device, and how a screenshot of a live table can be
+// taken without a browser profile holding the seat.
+const carriedToken = params.get("token");
+if (inviteCode && carriedToken) {
+  store.setToken(inviteCode, carriedToken);
+  if (params.get("name")) store.name = params.get("name");
+}
+
+if (inviteCode) {
+  $("tabJoin").click();
+  $("codeIn").value = inviteCode;
+  const ownTab = (() => {
+    try { return sessionStorage.getItem(tokenKey(inviteCode)); } catch { return null; }
+  })();
+  const held = store.token(inviteCode);
+  if (ownTab) {
+    // This tab already holds this seat: just take it back, no questions.
+    S.code = inviteCode;
+    S.token = ownTab;
+    attach(inviteCode);
+  } else if (held && store.name) {
+    // This browser already holds a seat in this room. Silently claiming it again looks
+    // like "joining did nothing" — and it takes the seat away from the tab that is
+    // already playing it — so ask which of the two things was meant.
+    $("createPane").style.display = "none";
+    $("joinPane").style.display = "none";
+    $("resumePane").style.display = "";
+    $("resumeText").innerHTML =
+      `This browser already has a seat at <b>${esc(inviteCode)}</b> as <b>${esc(store.name)}</b>.`;
+    $("resumeBtn").addEventListener("click", () => {
+      S.code = inviteCode;
+      S.token = held;
+      attach(inviteCode);
+    });
+    $("resumeOther").addEventListener("click", () => {
+      store.forgetToken(inviteCode);
+      $("resumePane").style.display = "none";
+      $("joinPane").style.display = "";
+      $("nameJoin").value = "";
+      $("nameJoin").focus();
+    });
+  } else {
+    $("nameJoin").focus();
+  }
+}
+</script>
+</body>
+</html>

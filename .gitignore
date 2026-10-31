@@ -1,0 +1,12 @@
+preview.png
+raw.png
+clicktest.html
+.bot-seats.json
+public-url.txt
+tunnel.log
+tunnel-supervisor.log
+server.log
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
