@@ -14,11 +14,13 @@ from golf.engine import (
     COLS,
     HAND,
     HOLES,
+    KNOCK_MIN_UP,
     RuleError,
     apply,
     build_deck,
     card_value,
     create_match,
+    knock_ready,
     legal_actions,
     score_hand,
 )
@@ -288,3 +290,78 @@ def test_nonsense_actions_are_refused_rather_than_silently_ignored():
     apply(state, state.turn, {"type": "draw-stock"})
     with pytest.raises(RuleError, match="no such slot"):
         apply(state, state.turn, {"type": "swap"})
+
+# ── knocking ────────────────────────────────────────────────────────────
+
+
+def play_to_knock_ready(seats: int, seed: int):
+    """Play with the deterministic bot until every grid shows three cards."""
+    state = create_match(seats=seats, seed=seed)
+    guard = 0
+    while not knock_ready(state) and guard < 20000:
+        guard += 1
+        if state.phase == "done":
+            break
+        apply(state, state.turn, choose_action(state, state.turn))
+    return state
+
+
+def test_nobody_may_knock_until_every_grid_shows_three_cards():
+    state = create_match(seats=3, seed=10)
+    seat = state.turn
+
+    assert KNOCK_MIN_UP == 3
+    assert knock_ready(state) is False, "a fresh deal has two cards up each"
+    assert not any(a["type"] == "knock" for a in legal_actions(state, seat)), "and it is not offered"
+
+    with pytest.raises(RuleError, match="every grid needs 3 cards showing"):
+        apply(state, seat, {"type": "knock"})
+
+
+def test_once_every_grid_shows_three_cards_anyone_may_knock_and_the_hole_ends():
+    state = play_to_knock_ready(3, 10)
+    assert knock_ready(state), "never reached three cards showing in every grid"
+    assert state.phase == "draw", "knocking is offered between turns, not mid-swap"
+
+    knocker = (state.turn + 1) % 3  # deliberately not the player to move
+    assert any(a["type"] == "knock" for a in legal_actions(state, knocker)), "every seat is offered it"
+
+    before = [s["total"] for s in state.seats]
+    apply(state, knocker, {"type": "knock"})
+
+    assert state.phase == "done"
+    assert state.pending is None
+    assert all(c["up"] for hand in state.hands for c in hand), "every card turns face up"
+    assert all(isinstance(s, int) for s in state.hole_scores), "the hole is scored"
+    assert state.seats[knocker]["total"] == before[knocker] + state.hole_scores[knocker]
+    knock_line = next(e for e in state.log if e["text"].endswith("knocked"))
+    assert knock_line["text"] == f"{state.seats[knocker]['name']} knocked"
+    assert knock_line["hl"] is True
+
+
+def test_a_knock_waits_for_the_turn_already_in_progress():
+    state = play_to_knock_ready(2, 14)
+    assert knock_ready(state)
+
+    apply(state, state.turn, {"type": "draw-stock"})
+    assert state.phase == "swap"
+    other = (state.turn + 1) % 2
+    with pytest.raises(RuleError, match="finish the turn in progress"):
+        apply(state, other, {"type": "knock"})
+    assert not any(a["type"] == "knock" for a in legal_actions(state, other)), "not offered mid-swap"
+
+
+def test_the_hole_after_a_knock_is_over_next_hole_and_no_second_knock():
+    state = play_to_knock_ready(3, 10)
+    knocker = (state.turn + 1) % 3
+    apply(state, knocker, {"type": "knock"})
+
+    with pytest.raises(RuleError, match="the hole is over"):
+        apply(state, knocker, {"type": "knock"})
+    assert legal_actions(state, knocker) == [{"type": "next-hole"}]
+
+    hole = state.hole
+    apply(state, knocker, {"type": "next-hole"})
+    assert state.hole == hole + 1
+    assert state.phase == "draw"
+    assert knock_ready(state) is False, "a fresh hole is not knockable"

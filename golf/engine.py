@@ -28,6 +28,8 @@ COLS = [
 HAND = 6
 HOLES = 9
 MIN_SEATS = 2
+#: Cards that must be showing in every grid before anybody may knock.
+KNOCK_MIN_UP = 3
 MAX_SEATS = 4
 
 
@@ -294,6 +296,22 @@ def _end_turn(state: State) -> None:
     state.source = None
 
 
+def knock_ready(state: State) -> bool:
+    """Everybody has at least three cards showing: from here anyone may knock.
+
+    Until then the button does not exist.
+    """
+    if state.phase == "done" or not state.hands:
+        return False
+    return all(sum(1 for c in hand if c["up"]) >= KNOCK_MIN_UP for hand in state.hands)
+
+
+def _knock(state: State, seat: int) -> None:
+    """A knock ends the hole on the spot: every grid turns up and the hole scores."""
+    _push_log(state, f"{state.seats[seat]['name']} knocked", True)
+    _score_hole(state)
+
+
 def apply(state: State, seat: Any, action: Any) -> State:
     """Apply one action for one seat.
 
@@ -314,6 +332,18 @@ def apply(state: State, seat: Any, action: Any) -> State:
         state.hole += 1
         _start_hole(state)
         _push_log(state, f"{state.seats[state.turn]['name']} tees off on hole {state.hole}", True)
+        return state
+
+    # A knock belongs to the table, not to the player to move: the first person to see
+    # three cards showing in every grid ends the hole.
+    if action["type"] == "knock":
+        if state.phase == "done":
+            raise RuleError("the hole is over")
+        if state.phase != "draw":
+            raise RuleError("finish the turn in progress before knocking")
+        if not knock_ready(state):
+            raise RuleError(f"every grid needs {KNOCK_MIN_UP} cards showing before anybody can knock")
+        _knock(state, seat)
         return state
 
     if state.phase == "done":
@@ -349,10 +379,11 @@ def legal_actions(state: State, seat: int) -> list[dict]:
     """What the current player may legally do — the client mirrors this to enable UI."""
     if state.phase == "done":
         return [] if state.over else [{"type": "next-hole"}]
+    knock = [{"type": "knock"}] if state.phase == "draw" and knock_ready(state) else []
     if state.turn != seat:
-        return []
+        return knock
     if state.phase == "draw":
-        return [{"type": "draw-stock"}, {"type": "draw-discard"}]
+        return [{"type": "draw-stock"}, {"type": "draw-discard"}, *knock]
     if state.phase == "swap":
         slots = [{"type": "swap", "slot": i} for i in range(HAND)]
         if state.source == "stock":

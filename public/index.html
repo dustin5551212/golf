@@ -611,9 +611,15 @@ function renderBoard(message) {
   }
   $("status").innerHTML = status;
 
-  $("actions").innerHTML = canDo(view, "discard")
+  // A knock belongs to the table: once every grid shows three cards, everybody is
+  // offered it, not just the player to move.
+  const knockBtn = canDo(view, "knock")
+    ? '<button data-act="knock" class="knock">Knock \u2014 end the hole</button>'
+    : "";
+  const passBtn = canDo(view, "discard")
     ? '<button data-act="discard">Throw it away (pass)</button>'
     : "";
+  $("actions").innerHTML = knockBtn + passBtn;
 
   $("myhint").textContent = myTurn && view.phase === "swap" ? "click a card to swap" : "";
 
@@ -683,6 +689,7 @@ document.addEventListener("click", (event) => {
   const act_ = target.dataset.act;
   if (act_ === "swap") return void act({ type: "swap", slot: Number(target.dataset.slot) });
   if (act_ === "flip") return void act({ type: "flip", slot: Number(target.dataset.slot) });
+  if (act_ === "knock") return void act({ type: "knock" }, "status");
   if (act_ === "discard") return void act({ type: "discard" });
   if (act_ === "next-hole") return void act({ type: "next-hole" }, "status");
 });

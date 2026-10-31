@@ -73,6 +73,8 @@ scoring grid, the mulberry32 stream for eight seeds, three full shuffled deck or
 fifteen dealt positions, 302 scripted actions with the complete state after each,
 fifteen refusal messages, six redacted views per seat, and four whole nine-hole
 matches (292–548 actions each) with hole-by-hole scores and the terminal state.
+Regenerated when knocking was added: 46 of those scripted steps now carry `knock` in a
+seat's `legal` list, so the new action is parity-checked rather than assumed.
 
 Layer by layer:
 
@@ -94,6 +96,12 @@ Layer by layer:
 - **A card taken from the discard pile must be placed**; only a stock draw may be
   thrown away.
 - **When a grid fills, everyone else gets exactly one more turn**, then the hole scores.
+- **Knocking ends a hole from anywhere at the table.** Once every grid shows three
+  face-up cards (`KNOCK_MIN_UP`), `legal` offers `{"type": "knock"}` to *every* seat, not
+  just the player to move, and `apply` honours it out of turn — the one action that
+  deliberately bypasses the turn check. It is refused mid-swap ("finish the turn in
+  progress") so a held card can never be lost, and it ends the hole by flipping every
+  card up and scoring (`_score_hole`), with no penalty.
 - **The stock's contents never leave the server.** `golf/view.py` is the only place
   that decides what a seat is sent; build views from scratch there rather than
   deleting fields off an engine state.
