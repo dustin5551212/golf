@@ -19,6 +19,15 @@ python -m golf --seed 42 --seats 3        # headless match, printed
 python -m golf --seed 42 --seats 3 --trace  # every action, in order
 ```
 
+Run those from this directory — `python -m golf` finds the package through the
+current directory. Two wrappers on `PATH` do the `cd` and `PYTHONPATH` for you, so they
+work from anywhere (`~/.local/bin/golf`, `~/.local/bin/golf-serve`):
+
+```sh
+golf --seed 42 --seats 3      # headless match
+golf-serve 5175               # server on another port
+```
+
 No runtime dependencies: standard library only (`http.server`, `threading`, `json`).
 Development needs `pytest`, in `.venv`:
 
