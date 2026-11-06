@@ -38,11 +38,11 @@ Development needs `pytest`:
 ```sh
 python -m venv .venv
 .venv/bin/pip install pytest
-.venv/bin/python -m pytest          # 53 tests
+.venv/bin/python -m pytest          # 58 tests
 ```
 
-One test skips when the JavaScript repo is not checked out beside this one — that is the
-client-drift check, which has nothing to compare against on its own.
+One of them, the client-drift check, compares `public/` against `../golf/public`; it
+skips when the JavaScript repo is not checked out beside this one.
 
 ## How the port was proved, not just written
 
@@ -75,8 +75,8 @@ Layer by layer:
 
 | Check | Command | Result |
 |---|---|---|
-| Rules, in Python idiom | `.venv/bin/python -m pytest tests/test_engine.py` | 18 tests |
-| Redaction boundary | `... tests/test_view.py` | 8 tests, including a leak sweep over every seat at every step of a full match |
+| Rules, in Python idiom | `.venv/bin/python -m pytest tests/test_engine.py` | 23 tests |
+| Redaction boundary | `... tests/test_view.py` | 9 tests, including a leak sweep over every seat at every step of a full match |
 | Parity with the JS source | `... tests/test_parity.py` | every fixture case, byte-equal snapshots |
 | Joined system | `... tests/test_system.py` | 52 cards conserved at every step, totals reconcile, same seed → identical run |
 | Transport | `... tests/test_server.py` | rooms, refusals, polling, and a real SSE stream |
